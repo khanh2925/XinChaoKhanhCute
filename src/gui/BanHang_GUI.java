@@ -254,6 +254,14 @@ public class BanHang_GUI extends JPanel implements ActionListener {
 		    btnXoa.setBorderPainted(false);
 		    btnXoa.setContentAreaFilled(false);
 		    btnXoa.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		    btnXoa.addActionListener(ev -> {
+		        pnDanhSachDon.remove(row);
+		        if (rowTangThem[0] != null) {
+		            pnDanhSachDon.remove(rowTangThem[0]);
+		        }
+		        pnDanhSachDon.revalidate();
+		        pnDanhSachDon.repaint();
+		    });
 		    try {
 		        ImageIcon icon = new ImageIcon(getClass().getResource("/images/bin.png"));
 		        btnXoa.setIcon(new ImageIcon(icon.getImage().getScaledInstance(22, 22, Image.SCALE_SMOOTH)));
@@ -295,7 +303,11 @@ public class BanHang_GUI extends JPanel implements ActionListener {
 		                    "Cảnh báo",
 		                    JOptionPane.WARNING_MESSAGE
 		            );
-		            sl = slToiDa - kmSP.getSoLuongTangThem();
+		            if (kmSP != null && daTangThem[0]) {
+		                sl = slToiDa - kmSP.getSoLuongTangThem();
+		            } else {
+		                sl = slToiDa;
+		            }
 		            txtSoLuong.setText(String.valueOf(sl));
 		        }
 		
@@ -382,21 +394,21 @@ public class BanHang_GUI extends JPanel implements ActionListener {
 		        	            daTangThem[0] = true;
 		        	        }
 		        	    } else {
-		        	        // chỉ hiện điều kiện, không tooltip
 		        	        txtKM.setText(
-		        	            "Mua ≥ " + kmSP.getSoLuongToiThieu()
-		        	            + " tặng thêm " + kmSP.getSoLuongTangThem() + " " + donViArr[0]
-		        	        );
-		        	        txtKM.setToolTipText(null);
+		        	                "Mua ≥ " + kmSP.getSoLuongToiThieu()
+		        	                + " tặng thêm " + kmSP.getSoLuongTangThem() + " " + donViArr[0]
+		        	            );
+		        	            txtKM.setToolTipText(null);
 
-		        	        if (daTangThem[0] && rowTangThem[0] != null) {
-		        	            pnDanhSachDon.remove(rowTangThem[0]);
-		        	            pnDanhSachDon.revalidate();
-		        	            pnDanhSachDon.repaint();
-		        	            rowTangThem[0] = null;
+		        	            // ✅ Thêm: Reset flag nếu chưa tạo row
+		        	            if (daTangThem[0] && rowTangThem[0] != null) {
+		        	                pnDanhSachDon.remove(rowTangThem[0]);
+		        	                pnDanhSachDon.revalidate();
+		        	                pnDanhSachDon.repaint();
+		        	                rowTangThem[0] = null;
+		        	                daTangThem[0] = false;  // ✅ Reset flag để có thể thêm lại sau
+		        	            }
 		        	        }
-		        	        daTangThem[0] = false;
-		        	    }
 		        	}
 
 		        }
@@ -721,162 +733,103 @@ public class BanHang_GUI extends JPanel implements ActionListener {
 	}
 
 	private void xuLyTimThuoc() {
-    String tuKhoa = txtTimThuoc.getText().trim();
-    if (tuKhoa.isEmpty()) {
-        JOptionPane.showMessageDialog(this, "Vui lòng nhập số đăng ký hoặc mã sản phẩm!");
-        return;
-    }
-
-    // 1. Tìm sản phẩm
-    SanPham sp = sanPhamDao.timSanPhamTheoSoDangKy(tuKhoa);
-    if (sp == null) sp = sanPhamDao.laySanPhamTheoMa(tuKhoa);
-    if (sp == null) {
-        JOptionPane.showMessageDialog(this, "Không tìm thấy sản phẩm với SĐK/Mã: " + tuKhoa);
-        return;
-    }
-
-    // 2. Lấy danh sách lô
-    List<LoSanPham> dsLo = loSanPhamDao.layDanhSachLoTheoMaSanPham(sp.getMaSanPham());
-    if (dsLo.isEmpty()) {
-        JOptionPane.showMessageDialog(this, "Sản phẩm này không còn lô nào đang tồn kho!", 
-                                     "Lỗi tồn kho", JOptionPane.ERROR_MESSAGE);
-        return;
-    }
-
-    // === KIỂM TRA SẢN PHẨM ĐÃ CÓ CHƯA ===
-    LoSanPham loDauTien = dsLo.get(0);
-    Box dongDaTonTai = timDongSanPhamTheoMaLo(loDauTien.getMaLo());
-    
-    if (dongDaTonTai != null) {
-        // ✅ ĐÃ CÓ -> TĂNG SỐ LƯỢNG
-        tangSoLuongDongSanPham(dongDaTonTai);
-        txtTimThuoc.setText("");
-        txtTimThuoc.requestFocus();
-        
-        JOptionPane.showMessageDialog(this, 
-            "Đã tăng số lượng sản phẩm: " + sp.getTenSanPham(), 
-            "Thông báo", 
-            JOptionPane.INFORMATION_MESSAGE);
-        return;
-    }
-
-    // === CHƯA CÓ -> THÊM MỚI ===
-    if (loDauTien.getSoLuongTon() <= 0) {
-        JOptionPane.showMessageDialog(this, "Lô gần hết hạn đã hết hàng!", 
-                                     "Hết hàng", JOptionPane.WARNING_MESSAGE);
-        return;
-    }
-
-    // 3. Lấy quy cách
-    List<QuyCachDongGoi> dsQuyCach = quyCachDongGoiDao.layDanhSachQuyCachTheoSanPham(sp.getMaSanPham());
-    QuyCachDongGoi quyCachGoc = dsQuyCach.stream()
-            .filter(QuyCachDongGoi::isDonViGoc)
-            .findFirst()
-            .orElse(null);
-    if (quyCachGoc == null) {
-        JOptionPane.showMessageDialog(this, "Sản phẩm chưa có quy cách gốc!", 
-                                     "Lỗi cấu hình", JOptionPane.ERROR_MESSAGE);
-        return;
-    }
-
-    String[] donViArr = new String[dsQuyCach.size()];
-    double[] giaArr = new double[dsQuyCach.size()];
-    int[] heSoArr = new int[dsQuyCach.size()];
-    
-    for (int i = 0; i < dsQuyCach.size(); i++) {
-        QuyCachDongGoi qc = dsQuyCach.get(i);
-        donViArr[i] = qc.getDonViTinh().getTenDonViTinh();
-        double giaGoc = sp.getGiaBan() * qc.getHeSoQuyDoi();
-        giaArr[i] = giaGoc - giaGoc * qc.getTiLeGiam();
-        heSoArr[i] = qc.getHeSoQuyDoi();
-    }
-
-    // 4. Lấy khuyến mãi
-    List<ChiTietKhuyenMaiSanPham> dsKMSP = ctKMSPDao.layChiTietKhuyenMaiDangHoatDongTheoMaSP(sp.getMaSanPham());
-    ChiTietKhuyenMaiSanPham kmSP = dsKMSP.isEmpty() ? null : dsKMSP.get(0);
-
-    // 5. Ảnh
-    String anhPath = sp.getHinhAnh();
-    if (anhPath == null || anhPath.isEmpty()) {
-        anhPath = "/images/default_medicine.png";
-    }
-
-    int stt = pnDanhSachDon.getComponentCount() / 2 + 1;
-
-    themSanPham(
-        stt, sp.getTenSanPham(), loDauTien.getMaLo(),
-        loDauTien.getSoLuongTon(), donViArr, heSoArr,
-        giaArr, 1, kmSP, anhPath
-    );
-
-    pnDanhSachDon.revalidate();
-    pnDanhSachDon.repaint();
-    txtTimThuoc.setText("");
-    txtTimThuoc.requestFocus();
-}
-	private Box timDongSanPhamTheoMaLo(String maLo) {
-	    Component[] components = pnDanhSachDon.getComponents();
-	    
-	    for (Component comp : components) {
-	        if (comp instanceof Box) {
-	            Box row = (Box) comp;
-	            // Duyệt qua các component trong Box để tìm TextField chứa mã lô
-	            for (Component inner : row.getComponents()) {
-	                if (inner instanceof Box) {
-	                    Box infoBox = (Box) inner;
-	                    for (Component field : infoBox.getComponents()) {
-	                        if (field instanceof Box) {
-	                            Box loBox = (Box) field;
-	                            for (Component txtField : loBox.getComponents()) {
-	                                if (txtField instanceof JTextField) {
-	                                    JTextField txt = (JTextField) txtField;
-	                                    String text = txt.getText();
-	                                    if (text.startsWith("Lô: ") && text.contains(maLo)) {
-	                                        return row;
-	                                    }
-	                                }
-	                            }
-	                        }
-	                    }
-	                }
-	            }
-	        }
+	    String tuKhoa = txtTimThuoc.getText().trim();
+	    if (tuKhoa.isEmpty()) {
+	        JOptionPane.showMessageDialog(this, "Vui lòng nhập số đăng ký hoặc mã sản phẩm!");
+	        return;
 	    }
-	    return null;
-	}
 
-	/**
-	 * Tăng số lượng của dòng sản phẩm đã có
-	 */
-	private void tangSoLuongDongSanPham(Box row) {
-	    Component[] components = row.getComponents();
-	    
-	    for (Component comp : components) {
-	        if (comp instanceof Box) {
-	            Box soLuongBox = (Box) comp;
-	            // Tìm JTextField số lượng (nằm giữa 2 nút +/-)
-	            if (soLuongBox.getComponentCount() == 3) {
-	                Component middle = soLuongBox.getComponent(1);
-	                if (middle instanceof JTextField) {
-	                    JTextField txtSoLuong = (JTextField) middle;
-	                    try {
-	                        int slHienTai = Integer.parseInt(txtSoLuong.getText().trim());
-	                        txtSoLuong.setText(String.valueOf(slHienTai + 1));
-	                        
-	                        // Trigger sự kiện ActionListener để cập nhật lại giá
-	                        ActionListener[] listeners = txtSoLuong.getActionListeners();
-	                        if (listeners.length > 0) {
-	                            listeners[0].actionPerformed(
-	                                new ActionEvent(txtSoLuong, ActionEvent.ACTION_PERFORMED, "")
-	                            );
-	                        }
-	                        return;
-	                    } catch (NumberFormatException e) {
-	                        // Ignore
-	                    }
-	                }
-	            }
-	        }
+	    // 1. Tìm sản phẩm
+	    SanPham sp = sanPhamDao.timSanPhamTheoSoDangKy(tuKhoa);
+	    if (sp == null) sp = sanPhamDao.laySanPhamTheoMa(tuKhoa);
+	    if (sp == null) {
+	        JOptionPane.showMessageDialog(this, "Không tìm thấy sản phẩm với SĐK/Mã: " + tuKhoa);
+	        return;
 	    }
+
+
+	    // 2. Lấy danh sách lô (đã sắp xếp theo hạn gần nhất)
+	    List<LoSanPham> dsLo = loSanPhamDao.layDanhSachLoTheoMaSanPham(sp.getMaSanPham());
+	    if (dsLo.isEmpty()) {
+	        JOptionPane.showMessageDialog(this, "Sản phẩm này không còn lô nào đang tồn kho!", 
+	                                     "Lỗi tồn kho", JOptionPane.ERROR_MESSAGE);
+	        return;
+	    }
+
+	    // 3. Lấy quy cách
+	    List<QuyCachDongGoi> dsQuyCach = quyCachDongGoiDao.layDanhSachQuyCachTheoSanPham(sp.getMaSanPham());
+	    QuyCachDongGoi quyCachGoc = dsQuyCach.stream()
+	            .filter(QuyCachDongGoi::isDonViGoc)
+	            .findFirst()
+	            .orElse(null);
+	    if (quyCachGoc == null) {
+	        JOptionPane.showMessageDialog(this, "Sản phẩm chưa có quy cách gốc!", 
+	                                     "Lỗi cấu hình", JOptionPane.ERROR_MESSAGE);
+	        return;
+	    }
+
+	    // lấy đơn vị kèm danh sách giá luôn
+	    String[] donViArr = new String[dsQuyCach.size()];
+	    double[] giaArr = new double[dsQuyCach.size()];
+	    int[] heSoArr = new int[dsQuyCach.size()];
+	    
+	    for (int i = 0; i < dsQuyCach.size(); i++) {
+	        QuyCachDongGoi qc = dsQuyCach.get(i);
+	        donViArr[i] = qc.getDonViTinh().getTenDonViTinh();
+	         double giaGoc = sp.getGiaBan() * qc.getHeSoQuyDoi();
+	         giaArr[i] = giaGoc - giaGoc * qc.getTiLeGiam();
+	         heSoArr[i] = qc.getHeSoQuyDoi();
+	    }
+
+	    // 4. Lấy khuyến mãi
+	    List<ChiTietKhuyenMaiSanPham> dsKMSP = ctKMSPDao.layChiTietKhuyenMaiDangHoatDongTheoMaSP(sp.getMaSanPham());
+	    for (ChiTietKhuyenMaiSanPham kmSP : dsKMSP) {
+	    	System.out.println("==> GUI kiểm tra kmSP trước khi thêm: " + kmSP);
+		}
+	    ChiTietKhuyenMaiSanPham kmSP = null;
+
+	    if (!dsKMSP.isEmpty()) {
+	        kmSP = dsKMSP.get(0);
+	        System.out.println(">>> KMSP chọn: " + kmSP);
+	    } else {
+	        System.out.println(">>> kmSP = null (không có KM)");
+	    }
+
+	    // 5. Ảnh
+	    String anhPath = sp.getHinhAnh();
+	    if (anhPath == null || anhPath.isEmpty()) {
+	        anhPath = "/images/default_medicine.png";
+	    }
+
+
+	    // === CHỈ THÊM 1 DÒNG VỚI LÔ GẦN HẾT HẠN NHẤT ===
+	    LoSanPham loDauTien = dsLo.get(0); // Đã sắp xếp theo hạn
+	    if (loDauTien.getSoLuongTon() <= 0) {
+	        JOptionPane.showMessageDialog(this, "Lô gần hết hạn đã hết hàng!", "Hết hàng", JOptionPane.WARNING_MESSAGE);
+	        return;
+	    }
+
+	    int stt = pnDanhSachDon.getComponentCount() / 2 + 1;
+
+
+		themSanPham(
+	        stt,
+	        sp.getTenSanPham(),
+	        loDauTien.getMaLo(),
+	        loDauTien.getSoLuongTon(),
+	        donViArr,
+	        heSoArr,
+	        giaArr,
+	        1, // số lượng mặc định
+	        kmSP,
+	        anhPath
+	    );
+
+	    // Cập nhật giao diện
+	    pnDanhSachDon.revalidate();
+	    pnDanhSachDon.repaint();
+	    txtTimThuoc.setText("");
+	    txtTimThuoc.requestFocus();
 	}
+	
 }
